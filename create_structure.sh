@@ -26,7 +26,7 @@ touch "$REQ_DIR/wordpress/Dockerfile" "$REQ_DIR/wordpress/.dockerignore"
 
 # Create secret files (empty placeholders)
 touch \
-  secrets/db_root_password.txt \
-  secrets/wp_admin_password.txt \
-  secrets/wp_db_password.txt \
-  secrets/wp_user2_password.txt
+  secrets/db_root_password \
+  secrets/wp_admin_password \
+  secrets/wp_db_password \
+  secrets/wp_user2_password

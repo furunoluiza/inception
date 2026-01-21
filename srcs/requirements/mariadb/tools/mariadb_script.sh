@@ -1,55 +1,51 @@
 #!/bin/bash
-
-# Faz o script abortar imediatamente se qualquer comando retornar erro.
-# Isso evita deixar o banco em um estado inconsistente.
 set -e
 
-echo "🔍 Verificando diretório de dados do MariaDB..."
+echo "🔍 Iniciando script de configuração do MariaDB..."
 
-# Leitura dos secrets do Docker.
-# Secrets não são passados como variáveis de ambiente,
-# mas sim como arquivos montados no container.
+# --------------------------------------------------------------------
+# 1. Leitura dos secrets (montados pelo Docker em /run/secrets)
+# --------------------------------------------------------------------
 DB_ROOT_PASSWORD=$(cat "$MYSQL_ROOT_PASSWORD_FILE")
 DB_USER_PASSWORD=$(cat "$MYSQL_PASSWORD_FILE")
 
-# Verifica se o banco já foi inicializado anteriormente.
-# A existência do diretório /var/lib/mysql/mysql indica
-# que o volume persistente já contém os dados do sistema.
-# Nesse caso, não recriamos o banco (idempotência).
-if [ -d "/var/lib/mysql/mysql" ]; then
-    echo "📂 Banco já existe. Iniciando MariaDB normalmente..."
-    # Inicia o MariaDB em foreground para manter o container ativo.
-    exec mysqld_safe
+# --------------------------------------------------------------------
+# 2. Verificação de inicialização do banco da APLICAÇÃO
+#    Se o diretório do banco existir, NÃO recriamos nada.
+# --------------------------------------------------------------------
+if [ -d "/var/lib/mysql/${MYSQL_DATABASE}" ]; then
+    echo "📂 Banco '${MYSQL_DATABASE}' já existe. Iniciando MariaDB..."
+    exec mysqld --user=mysql --datadir=/var/lib/mysql
 fi
 
-echo "📦 Inicializando diretório de dados do MariaDB..."
+echo "📦 Banco ainda não existe. Inicializando MariaDB pela primeira vez..."
 
-# Inicializa as tabelas do sistema do MariaDB.
-# Em imagens Debian puras, isso precisa ser feito manualmente.
+# --------------------------------------------------------------------
+# 3. Inicialização das tabelas do sistema (somente 1ª execução)
+# --------------------------------------------------------------------
 mysql_install_db --user=mysql --datadir=/var/lib/mysql
 
-echo "🚀 Iniciando MariaDB temporariamente..."
-
-# Inicia o MariaDB de forma temporária, sem habilitar rede.
-# Isso permite apenas conexões locais via socket Unix,
-# evitando conexões externas durante a configuração inicial.
+# --------------------------------------------------------------------
+# 4. Subida TEMPORÁRIA do MariaDB (sem rede)
+#    Usada apenas para executar comandos SQL de configuração
+# --------------------------------------------------------------------
+echo "🚀 Subindo MariaDB temporariamente para configuração..."
 mysqld_safe --skip-networking --socket=/tmp/mysql.sock &
-pid="$!"
 
-# Aguarda o MariaDB ficar pronto para aceitar conexões.
-# Isso evita condições de corrida ao executar comandos SQL.
+# Aguarda o MariaDB ficar pronto
 until mysqladmin ping --socket=/tmp/mysql.sock >/dev/null 2>&1; do
     sleep 1
 done
 
-echo "⚙️ Configurando banco de dados e usuários..."
+# --------------------------------------------------------------------
+# 5. Configuração inicial:
+#    - senha do root
+#    - banco da aplicação
+#    - usuário da aplicação
+#    - permissões
+# --------------------------------------------------------------------
+echo "⚙️ Criando banco e usuários..."
 
-# Executa os comandos SQL necessários para a configuração inicial:
-# - Define a senha do usuário root
-# - Cria o banco de dados da aplicação, se não existir
-# - Cria o usuário da aplicação, se não existir
-# - Concede privilégios ao usuário sobre o banco
-# - Atualiza as permissões
 mysql --socket=/tmp/mysql.sock <<EOSQL
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${DB_ROOT_PASSWORD}';
 
@@ -60,15 +56,14 @@ GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE}\`.* TO '${MYSQL_USER}'@'%';
 FLUSH PRIVILEGES;
 EOSQL
 
+# --------------------------------------------------------------------
+# 6. Encerramento da instância temporária
+# --------------------------------------------------------------------
 echo "🛑 Encerrando MariaDB temporário..."
-
-# Finaliza corretamente a instância temporária do MariaDB
-# após a configuração inicial.
 mysqladmin --socket=/tmp/mysql.sock -uroot -p"${DB_ROOT_PASSWORD}" shutdown
 
+# --------------------------------------------------------------------
+# 7. Subida DEFINITIVA do MariaDB em foreground (PID 1)
+# --------------------------------------------------------------------
 echo "✅ MariaDB configurado. Iniciando servidor principal..."
-
-# Inicia o MariaDB definitivamente em foreground.
-# O uso de 'exec' garante que o processo assuma o PID 1,
-# permitindo o tratamento correto de sinais pelo Docker.
-exec mysqld_safe
+exec mysqld --user=mysql --datadir=/var/lib/mysql
