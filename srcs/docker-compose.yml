@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   ##################################
   # NGINX (Web Server + SSL)       #
@@ -133,10 +131,10 @@ volumes:
 ##########################
 secrets:
   wp_db_password:
-    file: ../secrets/wp_db_password.txt
+    file: ../secrets/wp_db_password
   db_root_password:
-    file: ../secrets/db_root_password.txt
+    file: ../secrets/db_root_password
   wp_admin_password:
-    file: ../secrets/wp_admin_password.txt
+    file: ../secrets/wp_admin_password
   wp_user2_password:
-    file: ../secrets/wp_user2_password.txt
+    file: ../secrets/wp_user2_password
