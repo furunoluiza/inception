@@ -1,4 +1,4 @@
-FROM debian:12
+FROM debian:12.11
 
 RUN apt update && apt install -y mariadb-server && \
     mkdir -p /run/mysqld /var/log/mysql && \
