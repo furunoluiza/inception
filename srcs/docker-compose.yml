@@ -1,34 +1,142 @@
-version: "3.8"
+version: "3.9"
 
 services:
-  mariadb:
-    build: requirements/mariadb
-    image: mariadb
-    container_name: mariadb
-    restart: always
+  ##################################
+  # NGINX (Web Server + SSL)       #
+  ##################################
+  nginx:
+    build:
+      context: requirements/nginx
+      args:
+        SERVER_NAME: ${SERVER_NAME}
+    image: nginx
+    container_name: nginx
 
-    env_file:
-      - .env
+    depends_on:
+      - wordpress
 
-    secrets:
-      - db_root_password
-      - wp_db_password
+    ports:
+      - "443:443"
 
     volumes:
-      - mariadb_data:/var/lib/mysql
+      # Volume COMPARTILHADO com o WordPress
+      - wordpress_data:/var/www/html
+      - ./requirements/nginx/conf:/etc/nginx/conf.d:ro
+
+    environment:
+      - SERVER_NAME=${SERVER_NAME}
 
     networks:
       - inception
 
+    restart: always
+
+
+  ##################################
+  # WORDPRESS (PHP-FPM)            #
+  ##################################
+  wordpress:
+    build: requirements/wordpress
+    image: wordpress
+    container_name: wp-php
+
+    depends_on:
+      - mariadb
+
+    volumes:
+      # MESMO volume do nginx
+      - wordpress_data:/var/www/html
+
+    environment:
+      - WP_URL=${WP_URL}
+      - WP_TITLE=${WP_TITLE}
+      - DB_HOST=${DB_HOST}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD_FILE=/run/secrets/wp_db_password
+
+      - WP_ADMIN_USER=${WP_ADMIN_USER}
+      - WP_ADMIN_PASSWORD_FILE=/run/secrets/wp_admin_password
+      - WP_ADMIN_EMAIL=${WP_ADMIN_EMAIL}
+
+      - WP_USER2=${WP_USER2}
+      - WP_USER2_PASSWORD_FILE=/run/secrets/wp_user2_password
+      - WP_USER2_EMAIL=${WP_USER2_EMAIL}
+      - WP_USER2_ROLE=${WP_USER2_ROLE}
+
+    secrets:
+      - wp_db_password
+      - wp_admin_password
+      - wp_user2_password
+
+    networks:
+      - inception
+
+    restart: always
+
+
+  ##################################
+  # MARIADB (Database)             #
+  ##################################
+  mariadb:
+    build: requirements/mariadb
+    image: mariadb
+    container_name: mariadb
+
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+    environment:
+      - MYSQL_DATABASE=${DB_NAME}
+      - MYSQL_USER=${DB_USER}
+      - MYSQL_PASSWORD_FILE=/run/secrets/wp_db_password
+      - MYSQL_ROOT_PASSWORD_FILE=/run/secrets/db_root_password
+
+    secrets:
+      - wp_db_password
+      - db_root_password
+
+    networks:
+      - inception
+
+    restart: always
+
+
+##########################
+# NETWORK               #
+##########################
 networks:
   inception:
-    driver: bridge
 
+
+##########################
+# VOLUMES               #
+##########################
 volumes:
-  mariadb_data:
+  wordpress_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/lfuruno/data/wordpress
 
+  mariadb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/lfuruno/data/mariadb
+
+
+##########################
+# SECRETS               #
+##########################
 secrets:
-  db_root_password:
-    file: ../secrets/db_root_password
   wp_db_password:
-    file: ../secrets/wp_db_password
+    file: ../secrets/wp_db_password.txt
+  db_root_password:
+    file: ../secrets/db_root_password.txt
+  wp_admin_password:
+    file: ../secrets/wp_admin_password.txt
+  wp_user2_password:
+    file: ../secrets/wp_user2_password.txt
